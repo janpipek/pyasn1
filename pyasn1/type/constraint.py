@@ -342,6 +342,77 @@ class PermittedAlphabetConstraint(SingleValueConstraint):
             raise error.ValueConstraintError(value)
 
 
+class WithComponentsConstraint(AbstractConstraint):
+    """Create a WithComponentsConstraint object.
+
+    The WithComponentsConstraint satisfies any mapping object that has
+    constrained fields present or absent.
+
+    The WithComponentsConstraint object can only be applied
+    to  :class:`~pyasn1.type.univ.Set` or
+    :class:`~pyasn1.type.univ.Sequence` types.
+
+    Parameters
+    ----------
+    *fields: :class:`tuple`
+        Zero or more tuples of (`field`, `bool`) indicating constrained fields.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        class Item(Sequence):  #  Set is similar
+            '''
+            ASN.1 specification:
+
+            Item ::= SEQUENCE {
+                id    INTEGER OPTIONAL,
+                name  OCTET STRING OPTIONAL
+            } WITH COMPONENTS id PRESENT, name ABSENT | id ABSENT, name PRESENT
+            '''
+            componentType = NamedTypes(
+                OptionalNamedType('id', Integer()),
+                OptionalNamedType('name', OctetString())
+            )
+            withComponents = ConstraintsIntersection(
+                WithComponetsConstraint(('id', True), ('name', False)),
+                WithComponetsConstraint(('id', False), ('name', True))
+            )
+
+        item = Item()
+
+        # This will succeed
+        item['id'] = 1
+
+        # This will succeed
+        item['name'] = 'John'
+
+        # This will fail on encoding
+        descr['id'] = 1
+        descr['name'] = 'John'
+    """
+    def _testValue(self, value, idx):
+        for field, present in self._values:
+            if field not in value:
+                continue
+
+            if present and not value[field].isValue:
+                raise error.ValueConstraintError(value)
+
+            if not present and value[field].isValue:
+                raise error.ValueConstraintError(value)
+
+    def _setValues(self, values):
+        for value in values:
+            if len(value) != 2 or not isinstance(value[1], bool):
+                raise error.PyAsn1Error(
+                    '%s: bad constraint values' % (self.__class__.__name__,)
+                )
+
+        AbstractConstraint._setValues(self, values)
+
+
 # This is a bit kludgy, meaning two op modes within a single constraint
 class InnerTypeConstraint(AbstractConstraint):
     """Value must satisfy the type and presence constraints"""

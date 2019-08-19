@@ -128,6 +128,69 @@ class PermittedAlphabetConstraintTestCase(SingleValueConstraintTestCase):
             assert 0, 'constraint check fails'
 
 
+class WithComponentsConstraintTestCase(BaseTestCase):
+
+    def setUp(self):
+
+        class ValueMock(object):
+            def __init__(self, isValue):
+                self.isValue = isValue
+
+        self.value = ValueMock(True)
+        self.novalue = ValueMock(False)
+
+    def testGoodVal(self):
+        c = constraint.WithComponentsConstraint(('A', True), ('B', False))
+
+        try:
+            c({'A': self.value, 'B': self.novalue})
+
+        except error.ValueConstraintError:
+            assert 0, 'constraint check fails'
+
+    def testGoodValWithExtraFields(self):
+        c = constraint.WithComponentsConstraint(('A', True), ('B', False))
+
+        try:
+            c({'A': self.value, 'B': self.novalue, 'C': self.value})
+
+        except error.ValueConstraintError:
+            assert 0, 'constraint check fails'
+
+    def testEmptyConstraint(self):
+        c = constraint.WithComponentsConstraint()
+
+        try:
+            c({'A': self.value, 'B': self.novalue})
+
+        except error.ValueConstraintError:
+            assert 0, 'constraint check fails'
+
+    def testBadVal(self):
+        c = constraint.WithComponentsConstraint(('A', True), ('B', False))
+
+        try:
+            c({'A': self.novalue, 'B': self.value})
+
+        except error.ValueConstraintError:
+            pass
+
+        else:
+            assert 0, 'constraint check fails'
+
+    def testBadValExtraFields(self):
+        c = constraint.WithComponentsConstraint(('A', True), ('B', False))
+
+        try:
+            c({'A': self.novalue, 'B': self.value, 'C': self.value})
+
+        except error.ValueConstraintError:
+            pass
+
+        else:
+            assert 0, 'constraint check fails'
+
+
 class ConstraintsIntersectionTestCase(BaseTestCase):
     def setUp(self):
         BaseTestCase.setUp(self)
