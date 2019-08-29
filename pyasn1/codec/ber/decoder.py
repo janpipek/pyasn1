@@ -27,6 +27,36 @@ LOG = debug.registerLoggee(__name__, flags=debug.DEBUG_DECODER)
 noValue = base.noValue
 
 
+class Buffer(object):
+    def __init__(self, bytes_, position=0, max_length=-1):
+        self._bytes = bytes_
+        self._length = len(bytes_) if max_length == -1 else min(len(bytes_), max_length)
+        self._position = position
+        self._max_position = self._length + self._position
+
+    def read(self, num):
+        new_position = self._position + num
+        if new_position > self._max_position:
+            raise ValueError("Cannot read behind the end of buffer")
+        rvalue = self._bytes[self._position:new_position]
+        self._position = new_position
+        return rvalue
+
+    def sub(self, length=-1):
+        return self.__class__(self._bytes, position=self._position, max_length=length)
+
+    def seek(self, pos, rel=False):
+        if rel:
+            pos = self._position + pos
+        if pos < 0:
+            raise ValueError("Cannot read before the start of buffer")
+        if pos > self._max_position:
+            raise ValueError("Cannot read behind the end of buffer")
+
+    def eof(self):
+        return self._position == self._max_position
+
+
 def asStream(substrate):
     # TODO: Apply sparingly or remove
     # :type substrate: Union[bytes, BytesIO, BufferedReader, OctetString]
