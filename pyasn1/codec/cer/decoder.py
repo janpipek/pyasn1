@@ -116,6 +116,6 @@ decodeStream = Decoder(tagMap, decoder.typeMap)
 #:     1 2 3
 #:
 def decode(substrate, asn1Spec=None, **kwargs):
-    stream = ByteStream(substrate)
+    stream = decoder.ByteStream(substrate)
     value = decodeStream(stream, asn1Spec, **kwargs)
-    return value, stream.read()
+    return value, stream.readAll()

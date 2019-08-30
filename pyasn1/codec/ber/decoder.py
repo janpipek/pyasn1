@@ -33,26 +33,24 @@ class PositionWrapper(object):
         self.value = value
 
 
-class ByteStream(object):
-    def __init__(self, bytes_, position=None, max_length=-1, parent=None):
-        if position is None:
-            position = PositionWrapper(0)
+class BoundByteStream(object):
+    def __init__(self, bytes_, max_length, position, marked_position=0):
         self._bytes = bytes_
-        length = len(bytes_) if max_length == -1 else min(len(bytes_) - position.value, max_length)
         self.position = position
-        self._max_position = length + self.position.value
-        self._cache = b""
-        self._cached = False
-        self._marked_position = 0
-        self.parent = parent
+        self._max_position = max_length + position.value  # TODO: Check overflow?
+        if self._max_position > len(bytes_):
+            raise PyAsn1Error("Cannot initialize stream exceeding its bytes.")
+        self._marked_position = marked_position
 
-    def read(self, num=None):
-        if num is not None:
-            new_position = self.position.value + num
-            if new_position > self._max_position:
-                raise PyAsn1Error("Cannot read behind the end of buffer")
-        else:
-            new_position = self._max_position
+    def readAll(self):
+        rvalue = self._bytes[self.position.value:self._max_position]
+        self.position.value = self._max_position
+        return rvalue
+
+    def read(self, num):
+        new_position = self.position.value + num
+        if new_position > self._max_position:
+            raise PyAsn1Error("Cannot read behind the end of buffer")
         rvalue = self._bytes[self.position.value:new_position]
         self.position.value = new_position
         return rvalue
@@ -60,8 +58,8 @@ class ByteStream(object):
     def markPosition(self):
         self._marked_position = self.position.value
 
-    def parentBytes(self):
-        return self._bytes[self.parent._marked_position:self.position.value]
+    def backtrackBytes(self):
+        return self._bytes[self._marked_position:self.position.value]
 
     def peek(self, num=None):
         if num is not None:
@@ -76,8 +74,8 @@ class ByteStream(object):
     def __bytes__(self):
         return self._bytes[self.position:self._max_position]
 
-    def sub(self, length=-1):
-        return self.__class__(self._bytes, position=self.position, max_length=length, parent=self)
+    def sub(self, length):
+        return BoundByteStream(self._bytes, position=self.position, max_length=length, marked_position=self._marked_position)
 
     def seek(self, pos, rel=False):
         if rel:
@@ -90,6 +88,14 @@ class ByteStream(object):
 
     def eof(self):
         return self.position.value == self._max_position
+
+
+class ByteStream(BoundByteStream):
+    def __init__(self, bytes_):
+        self._bytes = bytes_
+        self.position = PositionWrapper(0)
+        self._max_position = len(bytes_)
+        self._marked_position = 0
 
 
 class AbstractDecoder(object):
@@ -226,7 +232,7 @@ class BitStringDecoder(AbstractSimpleDecoder):
                 )
 
             value = self.protoComponent.fromOctetString(
-                substrate.read(), internalFormat=True, padding=trailingBits)
+                substrate.readAll(), internalFormat=True, padding=trailingBits)
 
             return self._createComponent(asn1Spec, tagSet, value, **options)
 
@@ -1125,7 +1131,7 @@ class AnyDecoder(AbstractSimpleDecoder):
             isUntagged = tagSet != asn1Spec.tagSet
 
         if isUntagged:
-            parent_bytes = substrate.parentBytes()
+            parent_bytes = substrate.backtrackBytes()
             # length += len(parent_bytes)
 
             if LOG:
@@ -1162,7 +1168,7 @@ class AnyDecoder(AbstractSimpleDecoder):
                 LOG('decoding as tagged ANY')
 
         else:
-            header = substrate.parentBytes()
+            header = substrate.backtrackBytes()
 
             if LOG:
                 LOG('decoding as untagged ANY, header substrate %s' % debug.hexdump(header))
@@ -1602,7 +1608,7 @@ class Decoder(object):
 
                 if length == -1:  # indef length
                     value = concreteDecoder.indefLenValueDecoder(
-                        substrate.sub(), asn1Spec,
+                        substrate, asn1Spec,
                         tagSet, length, stGetValueDecoder,
                         self, substrateFun,
                         **options
@@ -1716,7 +1722,7 @@ def decode(substrate, asn1Spec=None, **kwargs):
         substrate = substrate.asOctets()
     stream = ByteStream(substrate)
     value = decodeStream(stream, asn1Spec, **kwargs)
-    return value, stream.read()
+    return value, stream.readAll()
 
 
 # XXX

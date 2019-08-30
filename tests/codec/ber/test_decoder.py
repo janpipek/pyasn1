@@ -1619,7 +1619,7 @@ class ErrorOnDecodingTestCase(BaseTestCase):
         decode.defaultErrorState = decoder.stDumpRawValue
 
         asn1Object = decode(stream)
-        rest = stream.read()
+        rest = stream.readAll()
 
         assert isinstance(asn1Object, univ.Any), (
             'Unexpected raw dump type %r' % (asn1Object,))
