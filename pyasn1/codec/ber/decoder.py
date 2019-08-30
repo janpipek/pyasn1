@@ -28,9 +28,8 @@ LOG = debug.registerLoggee(__name__, flags=debug.DEBUG_DECODER)
 noValue = base.noValue
 
 
-class BufferPointer(object):
-    # __slots__ = ("value", "seek")
-
+class StreamPosition(object):
+    """Works as a point so that it can be shared across ByteStreams."""
     def seek(self, position):
         self.value = position
 
@@ -38,10 +37,10 @@ class BufferPointer(object):
         self.value = value
 
 
-class Buffer(object):
+class ByteStream(object):
     def __init__(self, bytes_, position=None, max_length=-1, parent=None):
         if position is None:
-            position = BufferPointer(0)
+            position = StreamPosition(0)
         self._bytes = bytes_
         length = len(bytes_) if max_length == -1 else min(len(bytes_) - position.value, max_length)
         self.position = position
@@ -753,7 +752,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        Buffer(containerValue[pos].asOctets()),
+                                        ByteStream(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **options
                                     )
 
@@ -761,7 +760,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    Buffer(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    ByteStream(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **options
                                 )
 
@@ -938,7 +937,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        Buffer(containerValue[pos].asOctets()),
+                                        ByteStream(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **dict(options, allowEoo=True)
                                     )
 
@@ -946,7 +945,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    Buffer(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    ByteStream(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **dict(options, allowEoo=True)
                                 )
 
@@ -1613,7 +1612,7 @@ class Decoder(object):
 
                 if length == -1:  # indef length
                     value = concreteDecoder.indefLenValueDecoder(
-                        substrate, asn1Spec,
+                        substrate.sub(), asn1Spec,
                         tagSet, length, stGetValueDecoder,
                         self, substrateFun,
                         **options
@@ -1725,7 +1724,7 @@ decodeStream = Decoder(tagMap, typeMap)
 def decode(substrate, asn1Spec=None, **kwargs):
     if isinstance(substrate, OctetString):
         substrate = substrate.asOctets()
-    stream = Buffer(substrate)
+    stream = ByteStream(substrate)
     value = decodeStream(stream, asn1Spec, **kwargs)
     return value, stream.read()
 
