@@ -4,9 +4,6 @@
 # Copyright (c) 2005-2019, Ilya Etingof <etingof@gmail.com>
 # License: http://snmplabs.com/pyasn1/license.html
 #
-import os
-from io import BytesIO, BufferedReader
-
 from pyasn1 import debug
 from pyasn1 import error
 from pyasn1.codec.ber import eoo
@@ -28,11 +25,10 @@ LOG = debug.registerLoggee(__name__, flags=debug.DEBUG_DECODER)
 noValue = base.noValue
 
 
-class StreamPosition(object):
-    """Works as a point so that it can be shared across ByteStreams."""
-    def seek(self, position):
-        self.value = position
+class PositionWrapper(object):
+    __slots__ = ["value"]
 
+    """Works as a point so that it can be shared across ByteStreams."""
     def __init__(self, value):
         self.value = value
 
@@ -40,13 +36,14 @@ class StreamPosition(object):
 class ByteStream(object):
     def __init__(self, bytes_, position=None, max_length=-1, parent=None):
         if position is None:
-            position = StreamPosition(0)
+            position = PositionWrapper(0)
         self._bytes = bytes_
         length = len(bytes_) if max_length == -1 else min(len(bytes_) - position.value, max_length)
         self.position = position
         self._max_position = length + self.position.value
         self._cache = b""
         self._cached = False
+        self._marked_position = 0
         self.parent = parent
 
     def read(self, num=None):
@@ -57,18 +54,14 @@ class ByteStream(object):
         else:
             new_position = self._max_position
         rvalue = self._bytes[self.position.value:new_position]
-        if self._cached:
-            self._cache += rvalue
-        self.position.seek(new_position)
+        self.position.value = new_position
         return rvalue
 
-    def popCache(self):
-        result, self._cache = self._cache, b""
-        return result
+    def markPosition(self):
+        self._marked_position = self.position.value
 
-    def restartCache(self):
-        self._cache = b""
-        self._cached = True
+    def parentBytes(self):
+        return self._bytes[self.parent._marked_position:self.position.value]
 
     def peek(self, num=None):
         if num is not None:
@@ -83,9 +76,6 @@ class ByteStream(object):
     def __bytes__(self):
         return self._bytes[self.position:self._max_position]
 
-    def read_byte(self):
-        return ord(self.read(1))
-
     def sub(self, length=-1):
         return self.__class__(self._bytes, position=self.position, max_length=length, parent=self)
 
@@ -96,7 +86,7 @@ class ByteStream(object):
             raise PyAsn1Error("Cannot read before the start of buffer")
         if pos > self._max_position:
             raise PyAsn1Error("Cannot read behind the end of buffer")
-        self.position.seek(pos)
+        self.position.value = pos
 
     def eof(self):
         return self.position.value == self._max_position
@@ -229,7 +219,7 @@ class BitStringDecoder(AbstractSimpleDecoder):
 
         if tagSet[0].tagFormat == tag.tagFormatSimple:  # XXX what tag to check?
 
-            trailingBits = substrate.read_byte()
+            trailingBits = ord(substrate.read(1))
             if trailingBits > 7:
                 raise error.PyAsn1Error(
                     'Trailing bits overflow %s' % trailingBits
@@ -1135,7 +1125,7 @@ class AnyDecoder(AbstractSimpleDecoder):
             isUntagged = tagSet != asn1Spec.tagSet
 
         if isUntagged:
-            parent_bytes = substrate.parent.popCache()
+            parent_bytes = substrate.parentBytes()
             # length += len(parent_bytes)
 
             if LOG:
@@ -1172,7 +1162,7 @@ class AnyDecoder(AbstractSimpleDecoder):
                 LOG('decoding as tagged ANY')
 
         else:
-            header = substrate.parent.popCache()
+            header = substrate.parentBytes()
 
             if LOG:
                 LOG('decoding as untagged ANY, header substrate %s' % debug.hexdump(header))
@@ -1374,7 +1364,7 @@ class Decoder(object):
         tagCache = self.__tagCache
         tagSetCache = self.__tagSetCache
 
-        substrate.restartCache()
+        substrate.markPosition()
 
         while state is not stStop:
             if state is stDecodeTag:
@@ -1385,7 +1375,7 @@ class Decoder(object):
 
                 # Decode tag
                 isShortTag = True
-                firstOctet = substrate.read_byte()  # Note: read returns bytes, not ints.
+                firstOctet = ord(substrate.read(1))  # Note: read returns bytes, not ints.
 
                 try:
                     lastTag = tagCache[firstOctet]
@@ -1403,7 +1393,7 @@ class Decoder(object):
 
                         try:
                             while True:
-                                integerTag = substrate.read_byte()
+                                integerTag = ord(substrate.read(1))
                                 lengthOctetIdx += 1
                                 tagId <<= 7
                                 tagId |= (integerTag & 0x7F)
@@ -1450,7 +1440,7 @@ class Decoder(object):
                 #         'Short octet stream on length decoding'
                 #     )
 
-                firstOctet = substrate.read_byte()
+                firstOctet = ord(substrate.read(1))
 
                 if firstOctet < 128:
                     size = 1
