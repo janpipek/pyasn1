@@ -66,7 +66,8 @@ class ByteStream(object):
         result, self._cache = self._cache, b""
         return result
 
-    def cacheOn(self):
+    def restartCache(self):
+        self._cache = b""
         self._cached = True
 
     def peek(self, num=None):
@@ -1142,9 +1143,9 @@ class AnyDecoder(AbstractSimpleDecoder):
         else:
             parent_bytes = b""
 
-        if substrateFun:
-            return substrateFun(self._createComponent(asn1Spec, tagSet, noValue, **options),
-                                substrate, length)
+        # if substrateFun:
+        #    return substrateFun(self._createComponent(asn1Spec, tagSet, noValue, **options),
+        #                        substrate, length)
 
         head = parent_bytes + substrate.read(length)
 
@@ -1179,10 +1180,10 @@ class AnyDecoder(AbstractSimpleDecoder):
         # Any components do not inherit initial tag
         asn1Spec = self.protoComponent
 
-        if substrateFun and substrateFun is not self.substrateCollector:
-            raise ValueError("Debile")
-            asn1Object = self._createComponent(asn1Spec, tagSet, noValue, **options)
-            return substrateFun(asn1Object, header + substrate, length + len(header))
+        #if substrateFun and substrateFun is not self.substrateCollector:
+        #    raise ValueError("Debile")
+        #    asn1Object = self._createComponent(asn1Spec, tagSet, noValue, **options)
+        #    return substrateFun(asn1Object, header + substrate, length + len(header))
 
         if LOG:
             LOG('assembling constructed serialization')
@@ -1373,10 +1374,9 @@ class Decoder(object):
         tagCache = self.__tagCache
         tagSetCache = self.__tagSetCache
 
+        substrate.restartCache()
+
         while state is not stStop:
-
-            substrate.cacheOn()
-
             if state is stDecodeTag:
                 # if isEmpty(substrate):
                 #     raise error.SubstrateUnderrunError(
