@@ -4,6 +4,7 @@
 # Copyright (c) 2005-2019, Ilya Etingof <etingof@gmail.com>
 # License: http://snmplabs.com/pyasn1/license.html
 #
+import io
 import sys
 try:
     import unittest2 as unittest
@@ -24,10 +25,11 @@ from pyasn1.compat.octets import ints2octs, str2octs, null
 from pyasn1.error import PyAsn1Error
 
 
-def decode_one(value, **kwargs):
-    values = list(decoder.decode(value, **kwargs))
-    assert len(values) == 1
-    return values[0]
+def decode_one(source,  **kwargs):
+    source = io.BytesIO(source)
+    iterator = decoder.decode(source, **kwargs)
+    values = next(iterator)
+    return values, source.read()
 
 class LargeTagDecoderTestCase(BaseTestCase):
     def testLargeTag(self):
@@ -1590,12 +1592,12 @@ class NonStringDecoderTestCase(BaseTestCase):
         self.substrate = ints2octs([48, 18, 5, 0, 4, 11, 113, 117, 105, 99, 107, 32, 98, 114, 111, 119, 110, 2, 1, 1])
 
     def testOctetString(self):
-        s, _ = decode_one(univ.OctetString(self.substrate), asn1Spec=self.s)
-        assert self.s == s
+        s = list(decoder.decode(univ.OctetString(self.substrate), asn1Spec=self.s))
+        assert [self.s] == s
 
     def testAny(self):
-        s, _ = decode_one(univ.Any(self.substrate), asn1Spec=self.s)
-        assert self.s == s
+        s = list(decoder.decode(univ.Any(self.substrate), asn1Spec=self.s))
+        assert [self.s] == s
 
 
 class ErrorOnDecodingTestCase(BaseTestCase):

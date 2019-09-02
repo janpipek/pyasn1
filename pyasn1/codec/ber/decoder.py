@@ -12,6 +12,7 @@ from pyasn1 import error
 from pyasn1.codec.ber import eoo
 from pyasn1.compat.integer import from_bytes
 from pyasn1.compat.octets import oct2int, octs2ints, ints2octs, null
+from pyasn1.error import PyAsn1Error
 from pyasn1.type import base
 from pyasn1.type import char
 from pyasn1.type import tag
@@ -31,12 +32,15 @@ _BUFFER_SIZE = 16
 
 
 def asSeekable(substrate):
-    """
-    :type substrate: Union[bytes, IOBase]
+    """Convert object to seekable bytes stream.
+
+    :type substrate: Union[bytes, IOBase, univ.OctetString]
     :rtype: IOBase
     """
     if isinstance(substrate, bytes):
         return BytesIO(substrate)
+    elif isinstance(substrate, univ.OctetString):
+        return BytesIO(substrate.asOctets())
     try:
         if substrate.seekable():
             return substrate
@@ -218,9 +222,10 @@ class BitStringDecoder(AbstractSimpleDecoder):
 
         bitString = self.protoComponent.fromOctetString(null, internalFormat=True)
 
-        head = popSubstream(substrate, length)
-        while not isEmpty(head):
-            component = decodeFun(head, self.protoComponent,
+        current_position = substrate.tell()
+
+        while not substrate.tell() - current_position < length:
+            component = decodeFun(substrate, self.protoComponent,
                                         substrateFun=substrateFun, **options)
 
             trailingBits = oct2int(component[0])
@@ -299,9 +304,10 @@ class OctetStringDecoder(AbstractSimpleDecoder):
 
         header = null
 
-        head = popSubstream(substrate, length)
-        while not isEmpty(head):
-            component = decodeFun(head, self.protoComponent,
+        original_position = substrate.tell()
+        # head = popSubstream(substrate, length)
+        while substrate.tell() - original_position < length:
+            component = decodeFun(substrate, self.protoComponent,
                                         substrateFun=substrateFun,
                                         **options)
             header += component
@@ -586,7 +592,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
         if tagSet[0].tagFormat != tag.tagFormatConstructed:
             raise error.PyAsn1Error('Constructed tag format expected')
 
-        head = popSubstream(substrate, length)
+        original_position = substrate.tell()
 
         if substrateFun is not None:
             if asn1Spec is not None:
@@ -602,12 +608,12 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
         if asn1Spec is None:
             asn1Object = self._decodeComponents(
-                head, tagSet=tagSet, decodeFun=decodeFun, **options
+                substrate, tagSet=tagSet, decodeFun=decodeFun, **options
             )
 
-            if not isEmpty(head):
+            if substrate.tell() < original_position + length:
                 if LOG:
-                    trailing = head.read()
+                    trailing = substrate.read()
                     LOG('Unused trailing %d octets encountered: %s' % (
                         len(trailing), debug.hexdump(trailing)))
 
@@ -630,7 +636,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             seenIndices = set()
             idx = 0
-            while not isEmpty(head):
+            while substrate.tell() - original_position < length:
                 if not namedTypes:
                     componentType = None
 
@@ -653,7 +659,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                             'Excessive components decoded at %r' % (asn1Spec,)
                         )
 
-                component = decodeFun(head, componentType, **options)
+                component = decodeFun(substrate, componentType, **options)
 
                 if not isDeterministic and namedTypes:
                     if isSetType:
@@ -757,8 +763,8 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             idx = 0
 
-            while not isEmpty(head):
-                component = decodeFun(head, componentType, **options)
+            while substrate.tell() - original_position < length:
+                component = decodeFun(substrate, componentType, **options)
                 asn1Object.setComponentByPosition(
                     idx, component,
                     verifyConstraints=False,
@@ -999,7 +1005,7 @@ class ChoiceDecoder(AbstractConstructedDecoder):
                      tagSet=None, length=None, state=None,
                      decodeFun=None, substrateFun=None,
                      **options):
-        head = popSubstream(substrate, length)
+        # head = popSubstream(substrate, length)
 
         if asn1Spec is None:
             asn1Object = self.protoComponent.clone(tagSet=tagSet)
@@ -1015,7 +1021,7 @@ class ChoiceDecoder(AbstractConstructedDecoder):
                 LOG('decoding %s as explicitly tagged CHOICE' % (tagSet,))
 
             component = decodeFun(
-                head, asn1Object.componentTagMap, **options
+                substrate, asn1Object.componentTagMap, **options
             )
 
         else:
@@ -1023,7 +1029,7 @@ class ChoiceDecoder(AbstractConstructedDecoder):
                 LOG('decoding %s as untagged CHOICE' % (tagSet,))
 
             component = decodeFun(
-                head, asn1Object.componentTagMap,
+                substrate, asn1Object.componentTagMap,
                 tagSet, length, state, **options
             )
 
@@ -1110,7 +1116,7 @@ class AnyDecoder(AbstractSimpleDecoder):
             isUntagged = tagSet != asn1Spec.tagSet
 
         if isUntagged:
-            fullPosition = options['fullPosition']
+            fullPosition = substrate._marked_position
             currentPosition = substrate.tell()
 
             substrate.seek(fullPosition, os.SEEK_SET)
@@ -1352,7 +1358,7 @@ class Decoder(object):
         tagCache = self.__tagCache
         tagSetCache = self.__tagSetCache
 
-        fullPosition = substrate.tell()
+        substrate._marked_position = substrate.tell()
 
         while state is not stStop:
 
@@ -1589,7 +1595,9 @@ class Decoder(object):
                 if not options.get('recursiveFlag', True) and not substrateFun:  # deprecate this
                     substrateFun = lambda a, b, c: (a, b[:c])
 
-                options.update(fullPosition=fullPosition)  # TODO: was fullSubstrate
+                # options.update(fullPosition=fullPosition)  # TODO: was fullSubstrate
+
+                original_position = substrate.tell()
 
                 if length == -1:  # indef length
                     value = concreteDecoder.indefLenValueDecoder(
@@ -1598,7 +1606,6 @@ class Decoder(object):
                         self, substrateFun,
                         **options
                     )
-
                 else:
                     value = concreteDecoder.valueDecoder(
                         substrate, asn1Spec,
@@ -1606,6 +1613,9 @@ class Decoder(object):
                         self, substrateFun,
                         **options
                     )
+                    bytes_read = substrate.tell() - original_position
+                    if bytes_read != length:
+                        raise PyAsn1Error("Read %s bytes instead of expected %s." % (bytes_read, length))
 
                 # TODO: Fix
                 # if LOG:
