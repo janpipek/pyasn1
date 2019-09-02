@@ -6,7 +6,7 @@
 #
 from pyasn1 import error
 from pyasn1.codec.ber import decoder
-from pyasn1.codec.ber.decoder import asStream
+from pyasn1.codec.ber.decoder import asSeekable
 from pyasn1.compat.octets import oct2int
 from pyasn1.type import univ
 
@@ -116,6 +116,6 @@ decodeStream = Decoder(tagMap, decoder.typeMap)
 #:     1 2 3
 #:
 def decode(substrate, asn1Spec=None, **kwargs):
-    stream = asStream(substrate)
+    stream = asSeekable(substrate)
     value = decodeStream(stream, asn1Spec, **kwargs)
     return value, stream.read()

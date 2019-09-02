@@ -20,40 +20,52 @@ from pyasn1.type import univ
 from pyasn1.type import useful
 
 
-__all__ = ['decode', 'decodeStream']
+__all__ = ['decode']
 
 LOG = debug.registerLoggee(__name__, flags=debug.DEBUG_DECODER)
 
 noValue = base.noValue
 
 
-def asStream(substrate):
-    # TODO: Apply sparingly or remove
-    # :type substrate: Union[bytes, BytesIO, BufferedReader, OctetString]
-    # :rtype: BufferedReader
-    if isinstance(substrate, univ.OctetString):
-        substrate = substrate.asOctets()
+_BUFFER_SIZE = 16
+
+
+def asSeekable(substrate):
+    """
+    :type substrate: Union[bytes, IOBase]
+    :rtype: IOBase
+    """
     if isinstance(substrate, bytes):
-        substrate = BytesIO(substrate)
-    if isinstance(substrate, BytesIO):
-        return BufferedReader(substrate)
-    if isinstance(substrate, BufferedReader):
-        return substrate
-    raise ValueError("%s Cannot be converted to stream" % substrate.__class__)
-
-
-def popSubstream(substrate, length):
-    content = substrate.read(length)
-    return asStream(content)
+        return BytesIO(substrate)
+    try:
+        if substrate.seekable():
+            return substrate
+        else:
+            return BufferedReader(substrate, _BUFFER_SIZE)
+    except AttributeError:
+        raise TypeError("Cannot convert " + substrate.__class__.__name__ + " to seekable bit stream.")
 
 
 def isEmpty(substrate):
-    # :type substrate: Union[bytes, BytesIO, BufferedReader]
-    # :rtype: bool
-    if isinstance(substrate, bytes):
-        return not bool(substrate)
+    """
+    :type substrate: IOBase
+    :rtype: bool
+    """
+    if isinstance(substrate, BytesIO):
+        return substrate.tell() == len(substrate.getbuffer())
     else:
-        return not bool(asStream(substrate).peek(1))
+        return not substrate.peek(1)
+
+
+def peek(substrate, size=-1):
+    if hasattr(substrate, "peek"):
+        return substrate.peek(size)
+    else:
+        current_position = substrate.tell()
+        try:
+            return substrate.read(size)
+        finally:
+            substrate.seek(current_position)
 
 
 class AbstractDecoder(object):
@@ -715,7 +727,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        asStream(containerValue[pos].asOctets()),
+                                        asSeekable(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **options
                                     )
 
@@ -723,7 +735,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    asStream(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    asSeekable(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **options
                                 )
 
@@ -900,7 +912,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        asStream(containerValue[pos].asOctets()),
+                                        asSeekable(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **dict(options, allowEoo=True)
                                     )
 
@@ -908,7 +920,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    asStream(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    asSeekable(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **dict(options, allowEoo=True)
                                 )
 
@@ -1105,7 +1117,7 @@ class AnyDecoder(AbstractSimpleDecoder):
             length += (currentPosition - fullPosition)
 
             if LOG:
-                LOG('decoding as untagged ANY, substrate %s' % debug.hexdump(substrate.peek()))
+                LOG('decoding as untagged ANY, substrate %s' % debug.hexdump(peek(substrate)))
 
         if substrateFun:
             return substrateFun(self._createComponent(asn1Spec, tagSet, noValue, **options),
@@ -1637,7 +1649,7 @@ class Decoder(object):
         return value
 
 
-decodeStream = Decoder(tagMap, typeMap)
+_decode = Decoder(tagMap, typeMap)
 
 
 #: Turns BER octet stream into an ASN.1 object.
@@ -1691,9 +1703,10 @@ decodeStream = Decoder(tagMap, typeMap)
 #:     1 2 3
 #:
 def decode(substrate, asn1Spec=None, **kwargs):
-    stream = asStream(substrate)
-    value = decodeStream(stream, asn1Spec, **kwargs)
-    return value, stream.read()
+    substrate = asSeekable(substrate)
+    while not isEmpty(substrate):
+        yield _decode(substrate, asn1Spec, **kwargs)
+        # TODO: Check about eoo.endOfOctets
 
 
 # XXX
