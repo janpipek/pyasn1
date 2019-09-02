@@ -1363,14 +1363,20 @@ class Decoder(object):
         while state is not stStop:
 
             if state is stDecodeTag:
-                if isEmpty(substrate):
-                    raise error.SubstrateUnderrunError(
-                        'Short octet stream on tag decoding'
-                    )
+                #if isEmpty(substrate):
+                #    raise error.SubstrateUnderrunError(
+                #        'Short octet stream on tag decoding'
+                #    )
 
                 # Decode tag
                 isShortTag = True
-                firstOctet = ord(substrate.read(1))  # Note: read returns bytes, not ints.
+
+                firstByte = substrate.read(1)  # Note: read returns bytes, not ints.
+                if not firstByte:
+                    return None
+                    # raise error.SubstrateUnderrunError("TODO: Fixme %s" % firstByte)
+
+                firstOctet = ord(firstByte)
 
                 try:
                     lastTag = tagCache[firstOctet]
@@ -1386,19 +1392,18 @@ class Decoder(object):
                         lengthOctetIdx = 0
                         tagId = 0
 
-                        try:
-                            while True:
-                                integerTag = ord(substrate.read(1))
-                                lengthOctetIdx += 1
-                                tagId <<= 7
-                                tagId |= (integerTag & 0x7F)
-                                if not integerTag & 0x80:
-                                    break
-
-                        except IndexError:
-                            raise error.SubstrateUnderrunError(
-                                'Short octet stream on long tag decoding'
-                            )
+                        while True:
+                            integerByte = substrate.read(1)
+                            if not integerByte:
+                                raise error.SubstrateUnderrunError(
+                                    'Short octet stream on long tag decoding'
+                                )
+                            integerTag = ord(integerByte)
+                            lengthOctetIdx += 1
+                            tagId <<= 7
+                            tagId |= (integerTag & 0x7F)
+                            if not integerTag & 0x80:
+                                break
 
                     lastTag = tag.Tag(
                         tagClass=tagClass, tagFormat=tagFormat, tagId=tagId
@@ -1430,12 +1435,12 @@ class Decoder(object):
 
             if state is stDecodeLength:
                 # Decode length
-                if isEmpty(substrate):
+                try:
+                    firstOctet = ord(substrate.read(1))
+                except:
                     raise error.SubstrateUnderrunError(
                         'Short octet stream on length decoding'
                     )
-
-                firstOctet = ord(substrate.read(1))
 
                 if firstOctet < 128:
                     size = 1
@@ -1714,8 +1719,11 @@ _decode = Decoder(tagMap, typeMap)
 #:
 def decode(substrate, asn1Spec=None, **kwargs):
     substrate = asSeekable(substrate)
-    while not isEmpty(substrate):
-        yield _decode(substrate, asn1Spec, **kwargs)
+    while True:
+        result = _decode(substrate, asn1Spec, **kwargs)
+        if result is None:
+            break
+        yield result
         # TODO: Check about eoo.endOfOctets
 
 
