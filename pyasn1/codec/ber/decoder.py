@@ -232,7 +232,7 @@ class BitStringDecoder(AbstractSimpleDecoder):
 
         current_position = substrate.tell()
 
-        while not substrate.tell() - current_position < length:
+        while substrate.tell() - current_position < length:
             component = decodeFun(substrate, self.protoComponent,
                                         substrateFun=substrateFun, **options)
 
