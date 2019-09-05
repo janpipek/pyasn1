@@ -57,7 +57,11 @@ def endOfStream(substrate):
     :rtype: bool
     """
     if isinstance(substrate, BytesIO):
-        return substrate.tell() == len(substrate.getbuffer())
+        cp = substrate.tell()
+        substrate.seek(0, os.SEEK_END)
+        result = not(substrate.tell() - cp)
+        substrate.seek(cp, os.SEEK_SET)
+        return result
     else:
         return not substrate.peek(1)
 
