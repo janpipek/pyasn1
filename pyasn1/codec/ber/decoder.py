@@ -1345,7 +1345,7 @@ class Decoder(object):
                  **options):
 
         if LOG:
-            LOG('decoder called at scope %s with state %d, working with up to %d octets of substrate: %s' % (debug.scope, state, length, substrate))
+            LOG('decoder called at scope %s with state %d, working with up to %s octets of substrate: %s' % (debug.scope, state, length, substrate))
 
         allowEoo = options.pop('allowEoo', False)
 
