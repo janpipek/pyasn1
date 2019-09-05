@@ -5,56 +5,8 @@
 # License: http://snmplabs.com/pyasn1/license.html
 #
 import os
-import sys
 
-if sys.version_info < (3,):
-    class BytesIO(object):
-        def __init__(self, b):
-            self._buffer = b
-            self._pos = 0
-
-        def getbuffer(self):
-            return self._buffer
-
-        def seekable(self):
-            return True
-
-        def read(self, amount=None):
-            if amount is None:
-                oldpos = self._pos
-                self._pos = len(self._buffer)
-                return self._buffer[oldpos:]
-            else:
-                oldpos = self._pos
-                self._pos = min(self._pos + amount, len(self._buffer))
-                return self._buffer[oldpos:self._pos]
-
-        def isEof(self):
-            return self._pos == len(self._buffer)
-
-        def peek(self, amount=None):
-            if amount is None:
-                return self._buffer[self._pos:]
-            else:
-                return self._buffer[self._pos : min(self._pos + amount, len(self._buffer))]
-
-        def seek(self, offset, whence=os.SEEK_SET):
-            if whence == os.SEEK_SET:
-                self._pos = offset
-            elif whence == os.SEEK_CUR:
-                self._pos += offset
-            elif whence == os.SEEK_END:
-                self._pos = len(self._buffer) + offset
-            else:
-                raise ValueError
-
-        def tell(self):
-            return self._pos
-
-        from io import BufferedReader
-else:
-    from io import BytesIO, BufferedReader
-
+from io import BufferedReader
 
 from pyasn1 import debug
 from pyasn1 import error
@@ -68,6 +20,53 @@ from pyasn1.type import tag
 from pyasn1.type import tagmap
 from pyasn1.type import univ
 from pyasn1.type import useful
+
+
+class BytesIO(object):
+    def __init__(self, b):
+        self._buffer = b
+        self._len = len(b)
+        self._pos = 0
+
+    def getbuffer(self):
+        return self._buffer
+
+    def seekable(self):
+        return True
+
+    def read(self, amount=None):
+        if amount is None:
+            oldpos = self._pos
+            self._pos = len(self._buffer)
+            return self._buffer[oldpos:]
+        else:
+            oldpos = self._pos
+            self._pos = self._pos + amount
+            if self._pos > self._len:
+                self._pos = self._len
+            return self._buffer[oldpos:self._pos]
+
+    def isEof(self):
+        return self._pos == self._len
+
+    def peek(self, amount=None):
+        if amount is None:
+            return self._buffer[self._pos:]
+        else:
+            return self._buffer[self._pos : self._pos + amount]
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        if whence == os.SEEK_SET:
+            self._pos = offset
+        elif whence == os.SEEK_CUR:
+            self._pos += offset
+        elif whence == os.SEEK_END:
+            self._pos = len(self._buffer) + offset
+        else:
+            raise ValueError
+
+    def tell(self):
+        return self._pos
 
 
 __all__ = ['decode']
@@ -106,7 +105,7 @@ def endOfStream(substrate):
     :rtype: bool
     """
     if isinstance(substrate, BytesIO):
-        return substrate.tell() == len(substrate.getbuffer())
+        return substrate.isEof()
     else:
         return not substrate.peek(1)
 

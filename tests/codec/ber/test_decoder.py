@@ -26,7 +26,8 @@ from pyasn1.error import PyAsn1Error
 
 
 def decode_one(source,  **kwargs):
-    source = io.BytesIO(source)
+    from pyasn1.codec.ber.decoder import BytesIO
+    source = BytesIO(source)
     iterator = decoder.decode(source, **kwargs)
     values = next(iterator)
     return values, source.read()
