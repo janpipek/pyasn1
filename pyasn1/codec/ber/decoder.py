@@ -1162,7 +1162,8 @@ class AnyDecoder(AbstractSimpleDecoder):
                 LOG('decoding as tagged ANY')
 
         else:
-            fullPosition = options['fullPosition']
+            # TODO: Seems not to be tested
+            fullPosition = substrate._marked_position
             currentPosition = substrate.tell()
 
             substrate.seek(fullPosition, os.SEEK_SET)
