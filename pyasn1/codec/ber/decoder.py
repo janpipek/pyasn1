@@ -1335,9 +1335,8 @@ class Decoder(object):
                  decodeFun=None, substrateFun=None,
                  **options):
 
-        # TODO: Fix
-        # if LOG:
-        #    LOG('decoder called at scope %s with state %d, working with up to %d octets of substrate: %s' % (debug.scope, state, len(substrate), debug.hexdump(substrate)))
+        if LOG:
+            LOG('decoder called at scope %s with state %d, working with up to %d octets of substrate: %s' % (debug.scope, state, length, substrate))
 
         allowEoo = options.pop('allowEoo', False)
 
@@ -1363,18 +1362,12 @@ class Decoder(object):
         while state is not stStop:
 
             if state is stDecodeTag:
-                #if isEmpty(substrate):
-                #    raise error.SubstrateUnderrunError(
-                #        'Short octet stream on tag decoding'
-                #    )
-
                 # Decode tag
                 isShortTag = True
 
-                firstByte = substrate.read(1)  # Note: read returns bytes, not ints.
+                firstByte = substrate.read(1)
                 if not firstByte:
                     return None
-                    # raise error.SubstrateUnderrunError("TODO: Fixme %s" % firstByte)
 
                 firstOctet = ord(firstByte)
 
@@ -1443,7 +1436,6 @@ class Decoder(object):
                     )
 
                 if firstOctet < 128:
-                    size = 1
                     length = firstOctet
 
                 elif firstOctet > 128:
@@ -1463,25 +1455,16 @@ class Decoder(object):
                         length |= oct2int(lengthOctet)
                     size += 1
 
-                else:
-                    size = 1
+                else:  # 128 means indefinite
                     length = -1
 
-                if length == -1:
-                    if not self.supportIndefLength:
-                        raise error.PyAsn1Error('Indefinite length encoding not supported by this codec')
-
-                else:
-                    pass
-                    # TODO: Check substrate length
-                    # if len(substrate) < length:
-                    #     raise error.SubstrateUnderrunError('%d-octet short' % (length - len(substrate)))
+                if length == -1 and not self.supportIndefLength:
+                    raise error.PyAsn1Error('Indefinite length encoding not supported by this codec')
 
                 state = stGetValueDecoder
 
-                # TODO: Fix
-                # if LOG:
-                #    LOG('value length decoded into %d, payload substrate is: %s' % (length, debug.hexdump(length == -1 and substrate or substrate[:length])))
+                if LOG:
+                    LOG('value length decoded into %d' % length)
 
             if state is stGetValueDecoder:
                 if asn1Spec is None:
@@ -1600,8 +1583,6 @@ class Decoder(object):
                 if not options.get('recursiveFlag', True) and not substrateFun:  # deprecate this
                     substrateFun = lambda a, b, c: (a, b[:c])
 
-                # options.update(fullPosition=fullPosition)  # TODO: was fullSubstrate
-
                 original_position = substrate.tell()
 
                 if length == -1:  # indef length
@@ -1622,9 +1603,8 @@ class Decoder(object):
                     if bytes_read != length:
                         raise PyAsn1Error("Read %s bytes instead of expected %s." % (bytes_read, length))
 
-                # TODO: Fix
-                # if LOG:
-                #    LOG('codec %s yields type %s, value:\n%s\n...remaining substrate is: %s' % (concreteDecoder.__class__.__name__, value.__class__.__name__, isinstance(value, base.Asn1Item) and value.prettyPrint() or value, substrate and debug.hexdump(substrate) or '<none>'))
+                if LOG:
+                   LOG('codec %s yields type %s, value:\n%s\n...' % (concreteDecoder.__class__.__name__, value.__class__.__name__, isinstance(value, base.Asn1Item) and value.prettyPrint() or value))
 
                 state = stStop
                 break
