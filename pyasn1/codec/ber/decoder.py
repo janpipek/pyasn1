@@ -31,7 +31,7 @@ noValue = base.noValue
 _BUFFER_SIZE = 16
 
 
-def asSeekable(substrate):
+def asSeekableStream(substrate):
     """Convert object to seekable bytes stream.
 
     :type substrate: Union[bytes, IOBase, univ.OctetString]
@@ -50,8 +50,9 @@ def asSeekable(substrate):
         raise TypeError("Cannot convert " + substrate.__class__.__name__ + " to seekable bit stream.")
 
 
-def isEmpty(substrate):
-    """
+def endOfStream(substrate):
+    """Check whether we have reached an end of stream.
+
     :type substrate: IOBase
     :rtype: bool
     """
@@ -62,6 +63,10 @@ def isEmpty(substrate):
 
 
 def peek(substrate, size=-1):
+    """Peak the stream
+
+    :param size:
+    """
     if hasattr(substrate, "peek"):
         return substrate.peek(size)
     else:
@@ -79,27 +84,30 @@ class AbstractDecoder(object):
                      tagSet=None, length=None, state=None,
                      decodeFun=None, substrateFun=None,
                      **options):
-        # Note: return the value only
-        raise error.PyAsn1Error('Decoder not implemented for %s' % (tagSet,))
+        """Decode value with fixed byte length.
+
+        If the decoder does not consume a precise byte length,
+        it is considered an error.
+        """
+        raise error.PyAsn1Error('Decoder not implemented for %s' % (tagSet,))  # TODO: Seems more like an NotImplementedError?
 
     def indefLenValueDecoder(self, substrate, asn1Spec,
                              tagSet=None, length=None, state=None,
                              decodeFun=None, substrateFun=None,
                              **options):
-        # Note: return the value only
-        raise error.PyAsn1Error('Indefinite length mode decoder not implemented for %s' % (tagSet,))
+        """Decode value with undefined length.
+
+        The decoder is allowed to consume as many bytes as necessary.
+        """
+        raise error.PyAsn1Error('Indefinite length mode decoder not implemented for %s' % (tagSet,)) # TODO: Seems more like an NotImplementedError?
 
 
 class AbstractSimpleDecoder(AbstractDecoder):
     @staticmethod
     def substrateCollector(asn1Object, substrate, length):
-        # :type substrate: BytesIO
-        # :type length: int
-        # :rtype: object
         return substrate.read(length)
 
     def _createComponent(self, asn1Spec, tagSet, value, **options):
-        # :type value: str???
         if options.get('native'):
             return value
         elif asn1Spec is None:
@@ -124,7 +132,7 @@ class ExplicitTagDecoder(AbstractSimpleDecoder):
             )
         value = decodeFun(substrate, asn1Spec, tagSet, length, **options)
 
-        # TODO: Don't know what to with this
+        # TODO:
         # if LOG:
         #    LOG('explicit tag container carries %d octets of trailing payload '
         #        '(will be lost!): %s' % (len(_), debug.hexdump(_)))
@@ -165,7 +173,7 @@ class IntegerDecoder(AbstractSimpleDecoder):
         if tagSet[0].tagFormat != tag.tagFormatSimple:
             raise error.PyAsn1Error('Simple tag format expected')
 
-        if isEmpty(substrate) or not length:
+        if endOfStream(substrate) or not length:
             return self._createComponent(asn1Spec, tagSet, 0, **options)
 
         value = from_bytes(substrate.read(length), signed=True)
@@ -194,7 +202,7 @@ class BitStringDecoder(AbstractSimpleDecoder):
             return substrateFun(self._createComponent(
                 asn1Spec, tagSet, noValue, **options), substrate, length)
 
-        if isEmpty(substrate) or not length:
+        if endOfStream(substrate) or not length:
             raise error.PyAsn1Error('Empty BIT STRING substrate')
 
         if tagSet[0].tagFormat == tag.tagFormatSimple:  # XXX what tag to check?
@@ -254,7 +262,7 @@ class BitStringDecoder(AbstractSimpleDecoder):
 
         bitString = self.protoComponent.fromOctetString(null, internalFormat=True)
 
-        while not isEmpty(substrate):
+        while not endOfStream(substrate):
             component = decodeFun(substrate, self.protoComponent,
                                   substrateFun=substrateFun,
                                   allowEoo=True, **options)
@@ -327,7 +335,7 @@ class OctetStringDecoder(AbstractSimpleDecoder):
 
         header = null
 
-        while not isEmpty(substrate):
+        while not endOfStream(substrate):
             component = decodeFun(substrate,
                                              self.protoComponent,
                                              substrateFun=substrateFun,
@@ -548,7 +556,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
         components = []
         componentTypes = set()
 
-        while not isEmpty(substrate):
+        while not endOfStream(substrate):
             component = decodeFun(substrate, **options)
             if component is eoo.endOfOctets:
                 break
@@ -733,7 +741,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        asSeekable(containerValue[pos].asOctets()),
+                                        asSeekableStream(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **options
                                     )
 
@@ -741,7 +749,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    asSeekable(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    asSeekableStream(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **options
                                 )
 
@@ -817,7 +825,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             seenIndices = set()
             idx = 0
-            while not isEmpty(substrate):
+            while not endOfStream(substrate):
                 if len(namedTypes) <= idx:
                     asn1Spec = None
 
@@ -918,7 +926,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                                         containerValue):
 
                                     component = decodeFun(
-                                        asSeekable(containerValue[pos].asOctets()),
+                                        asSeekableStream(containerValue[pos].asOctets()),
                                         asn1Spec=openType, **dict(options, allowEoo=True)
                                     )
 
@@ -926,7 +934,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                             else:
                                 component = decodeFun(
-                                    asSeekable(asn1Object.getComponentByPosition(idx).asOctets()),
+                                    asSeekableStream(asn1Object.getComponentByPosition(idx).asOctets()),
                                     asn1Spec=openType, **dict(options, allowEoo=True)
                                 )
 
@@ -949,7 +957,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             idx = 0
 
-            while not isEmpty(substrate):
+            while not endOfStream(substrate):
                 component = decodeFun(substrate, componentType, allowEoo=True, **options)
 
                 if component is eoo.endOfOctets:
@@ -1123,7 +1131,7 @@ class AnyDecoder(AbstractSimpleDecoder):
             length += (currentPosition - fullPosition)
 
             if LOG:
-                LOG('decoding as untagged ANY, substrate %s' % debug.hexdump(peek(substrate)))
+                LOG('decoding as untagged ANY, substrate %s' % debug.hexdump(peek(substrate, length)))
 
         if substrateFun:
             return substrateFun(self._createComponent(asn1Spec, tagSet, noValue, **options),
@@ -1176,7 +1184,7 @@ class AnyDecoder(AbstractSimpleDecoder):
         # All inner fragments are of the same type, treat them as octet string
         substrateFun = self.substrateCollector
 
-        while not isEmpty(substrate):
+        while not endOfStream(substrate):
             component = decodeFun(substrate, asn1Spec,
                                              substrateFun=substrateFun,
                                              allowEoo=True, **options)
@@ -1698,7 +1706,7 @@ _decode = Decoder(tagMap, typeMap)
 #:     1 2 3
 #:
 def decode(substrate, asn1Spec=None, **kwargs):
-    substrate = asSeekable(substrate)
+    substrate = asSeekableStream(substrate)
     while True:
         result = _decode(substrate, asn1Spec, **kwargs)
         if result is None:

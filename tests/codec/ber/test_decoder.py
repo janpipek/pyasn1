@@ -1605,7 +1605,7 @@ class ErrorOnDecodingTestCase(BaseTestCase):
     def testErrorCondition(self):
         decode = decoder.Decoder(decoder.tagMap, decoder.typeMap)
         substrate = b'abc'
-        stream = decoder.asSeekable(substrate)
+        stream = decoder.asSeekableStream(substrate)
 
         try:
             asn1Object = decode(stream)
@@ -1621,7 +1621,7 @@ class ErrorOnDecodingTestCase(BaseTestCase):
     def testRawDump(self):
         decode = decoder.Decoder(decoder.tagMap, decoder.typeMap)
         substrate = ints2octs((31, 8, 2, 1, 1, 131, 3, 2, 1, 12))
-        stream = decoder.asSeekable(substrate, )
+        stream = decoder.asSeekableStream(substrate, )
 
         decode.defaultErrorState = decoder.stDumpRawValue
 
