@@ -5,7 +5,56 @@
 # License: http://snmplabs.com/pyasn1/license.html
 #
 import os
-from io import BytesIO, BufferedReader
+import sys
+
+if sys.version_info < (3,):
+    class BytesIO(object):
+        def __init__(self, b):
+            self._buffer = b
+            self._pos = 0
+
+        def getbuffer(self):
+            return self._buffer
+
+        def seekable(self):
+            return True
+
+        def read(self, amount=None):
+            if amount is None:
+                oldpos = self._pos
+                self._pos = len(self._buffer)
+                return self._buffer[oldpos:]
+            else:
+                oldpos = self._pos
+                self._pos = min(self._pos + amount, len(self._buffer))
+                return self._buffer[oldpos:self._pos]
+
+        def isEof(self):
+            return self._pos == len(self._buffer)
+
+        def peek(self, amount=None):
+            if amount is None:
+                return self._buffer[self._pos:]
+            else:
+                return self._buffer[self._pos : min(self._pos + amount, len(self._buffer))]
+
+        def seek(self, offset, whence=os.SEEK_SET):
+            if whence == os.SEEK_SET:
+                self._pos = offset
+            elif whence == os.SEEK_CUR:
+                self._pos += offset
+            elif whence == os.SEEK_END:
+                self._pos = len(self._buffer) + offset
+            else:
+                raise ValueError
+
+        def tell(self):
+            return self._pos
+
+        from io import BufferedReader
+else:
+    from io import BytesIO, BufferedReader
+
 
 from pyasn1 import debug
 from pyasn1 import error
@@ -62,10 +111,10 @@ def endOfStream(substrate):
         return not substrate.peek(1)
 
 
-def peek(substrate, size=-1):
-    """Peak the stream
+def peek(substrate, size=0):
+    """Peek the stream.
 
-    :param size:
+    :param size: How many bytes to read (0 = till the end)
     """
     if hasattr(substrate, "peek"):
         return substrate.peek(size)
@@ -1345,7 +1394,7 @@ class Decoder(object):
                  **options):
 
         if LOG:
-            LOG('decoder called at scope %s with state %d, working with up to %d octets of substrate: %s' % (debug.scope, state, length, substrate))
+            LOG('decoder called at scope %s with state %d, working with up to %s octets of substrate: %s' % (debug.scope, state, length, substrate))
 
         allowEoo = options.pop('allowEoo', False)
 
