@@ -5,7 +5,9 @@
 # License: http://snmplabs.com/pyasn1/license.html
 #
 import io
+import os
 import sys
+import tempfile
 try:
     import unittest2 as unittest
 
@@ -22,7 +24,7 @@ from pyasn1.type import char
 from pyasn1.codec.ber import decoder
 from pyasn1.codec.ber import eoo
 from pyasn1.compat.octets import ints2octs, str2octs, null
-from pyasn1.error import PyAsn1Error
+from pyasn1.error import PyAsn1Error, SubstrateUnderrunError
 
 
 def decode_one(source,  **kwargs):
@@ -1634,6 +1636,48 @@ class ErrorOnDecodingTestCase(BaseTestCase):
             'Unexpected raw dump value %r' % (asn1Object,))
         assert rest == ints2octs((131, 3, 2, 1, 12)), (
             'Unexpected rest of substrate after raw dump %r' % rest)
+
+
+class BinaryFileTestCase(BaseTestCase):
+    """Assure that decode works on open binary files."""
+    def testOneObject(self):
+        _, path = tempfile.mkstemp()
+        try:
+            with open(path, "wb") as out:
+                out.write(ints2octs((2, 1, 12)))
+
+            with open(path, "rb") as source:
+                values = list(decoder.decode(source))
+
+            assert values == [12]
+        finally:
+            os.remove(path)
+
+    def testMoreObjects(self):
+        _, path = tempfile.mkstemp()
+        try:
+            with open(path, "wb") as out:
+                out.write(ints2octs((2, 1, 12, 35, 128, 3, 2, 0, 169, 3, 2, 1, 138, 0, 0)))
+
+            with open(path, "rb") as source:
+                values = list(decoder.decode(source))
+
+            assert values == [12, (1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1)]
+        finally:
+            os.remove(path)
+
+    def testInvalidFileContent(self):
+        _, path = tempfile.mkstemp()
+        try:
+            with open(path, "wb") as out:
+                out.write(ints2octs((2, 1, 12, 35, 128, 3, 2, 0, 169, 3, 2, 1, 138, 0, 0, 7)))
+
+
+            with open(path, "rb") as source:
+                with self.assertRaises(SubstrateUnderrunError):
+                    _ = list(decoder.decode(source))
+        finally:
+            os.remove(path)
 
 
 suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
