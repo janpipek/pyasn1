@@ -5,6 +5,7 @@
 # License: http://snmplabs.com/pyasn1/license.html
 #
 import os
+import sys
 from io import BytesIO, BufferedReader
 
 from pyasn1 import debug
@@ -28,7 +29,8 @@ LOG = debug.registerLoggee(__name__, flags=debug.DEBUG_DECODER)
 noValue = base.noValue
 
 
-_BUFFER_SIZE = 16
+_BUFFER_SIZE = 1024
+_PY2 = sys.version_info < (3,)
 
 
 def asSeekableStream(substrate):
@@ -42,11 +44,14 @@ def asSeekableStream(substrate):
     elif isinstance(substrate, univ.OctetString):
         return BytesIO(substrate.asOctets())
     try:
-        if substrate.seekable():
-            return substrate
-        else:
+        if _PY2 and isinstance(substrate, file):
+            return BytesIO(substrate.read())  # Not optimal for really large files
+        elif not substrate.seekable():
             return BufferedReader(substrate, _BUFFER_SIZE)
-    except AttributeError:
+        else:
+            return substrate
+    except AttributeError as f:
+        print(f)
         raise TypeError("Cannot convert " + substrate.__class__.__name__ + " to seekable bit stream.")
 
 
