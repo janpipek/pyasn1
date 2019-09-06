@@ -177,10 +177,11 @@ class IntegerDecoder(AbstractSimpleDecoder):
         if tagSet[0].tagFormat != tag.tagFormatSimple:
             raise error.PyAsn1Error('Simple tag format expected')
 
-        if endOfStream(substrate) or not length:
+        the_bytes = substrate.read(length)
+        if len(the_bytes) == 0:
             return self._createComponent(asn1Spec, tagSet, 0, **options)
 
-        value = from_bytes(substrate.read(length), signed=True)
+        value = from_bytes(the_bytes, signed=True)
 
         return self._createComponent(asn1Spec, tagSet, value, **options)
 
@@ -266,12 +267,14 @@ class BitStringDecoder(AbstractSimpleDecoder):
 
         bitString = self.protoComponent.fromOctetString(null, internalFormat=True)
 
-        while not endOfStream(substrate):
+        while True:
             component = decodeFun(substrate, self.protoComponent,
                                   substrateFun=substrateFun,
                                   allowEoo=True, **options)
             if component is eoo.endOfOctets:
                 break
+            if component is None:
+                raise error.SubstrateUnderrunError('No EOO seen before substrate ends')
 
             trailingBits = oct2int(component[0])
             if trailingBits > 7:
@@ -283,9 +286,6 @@ class BitStringDecoder(AbstractSimpleDecoder):
                 component[1:], internalFormat=True,
                 prepend=bitString, padding=trailingBits
             )
-
-        else:
-            raise error.SubstrateUnderrunError('No EOO seen before substrate ends')
 
         return self._createComponent(asn1Spec, tagSet, bitString, **options)
 
@@ -339,20 +339,19 @@ class OctetStringDecoder(AbstractSimpleDecoder):
 
         header = null
 
-        while not endOfStream(substrate):
+        while True:
             component = decodeFun(substrate,
                                              self.protoComponent,
                                              substrateFun=substrateFun,
                                              allowEoo=True, **options)
             if component is eoo.endOfOctets:
                 break
+            if not component:
+                raise error.SubstrateUnderrunError(
+                    'No EOO seen before substrate ends'
+                )
 
             header += component
-
-        else:
-            raise error.SubstrateUnderrunError(
-                'No EOO seen before substrate ends'
-            )
 
         return self._createComponent(asn1Spec, tagSet, header, **options)
 
@@ -560,9 +559,12 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
         components = []
         componentTypes = set()
 
-        while not endOfStream(substrate):
+        while True:
             component = decodeFun(substrate, **options)
             if component is eoo.endOfOctets:
+                break
+            if component is None:
+                # TODO: Not an error in this case?
                 break
 
             components.append(component)
@@ -829,7 +831,7 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             seenIndices = set()
             idx = 0
-            while not endOfStream(substrate):
+            while True:  #not endOfStream(substrate):
                 if len(namedTypes) <= idx:
                     asn1Spec = None
 
@@ -855,6 +857,10 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
                 component = decodeFun(substrate, asn1Spec, allowEoo=True, **options)
                 if component is eoo.endOfOctets:
                     break
+                if component is None:
+                    raise error.SubstrateUnderrunError(
+                        'No EOO seen before substrate ends'
+                    )
 
                 if not isDeterministic and namedTypes:
                     if isSetType:
@@ -870,11 +876,6 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                 seenIndices.add(idx)
                 idx += 1
-
-            else:
-                raise error.SubstrateUnderrunError(
-                    'No EOO seen before substrate ends'
-                )
 
             if LOG:
                 LOG('seen component indices %s' % seenIndices)
@@ -961,11 +962,15 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
             idx = 0
 
-            while not endOfStream(substrate):
+            while True:
                 component = decodeFun(substrate, componentType, allowEoo=True, **options)
 
                 if component is eoo.endOfOctets:
                     break
+                if component is None:
+                    raise error.SubstrateUnderrunError(
+                        'No EOO seen before substrate ends'
+                    )
 
                 asn1Object.setComponentByPosition(
                     idx, component,
@@ -975,10 +980,6 @@ class UniversalConstructedTypeDecoder(AbstractConstructedDecoder):
 
                 idx += 1
 
-            else:
-                raise error.SubstrateUnderrunError(
-                    'No EOO seen before substrate ends'
-                )
 
         return asn1Object
 
@@ -1189,19 +1190,18 @@ class AnyDecoder(AbstractSimpleDecoder):
         # All inner fragments are of the same type, treat them as octet string
         substrateFun = self.substrateCollector
 
-        while not endOfStream(substrate):
+        while True:
             component = decodeFun(substrate, asn1Spec,
                                              substrateFun=substrateFun,
                                              allowEoo=True, **options)
             if component is eoo.endOfOctets:
                 break
+            if not component:
+                raise error.SubstrateUnderrunError(
+                    'No EOO seen before substrate ends'
+                )
 
             header += component
-
-        else:
-            raise error.SubstrateUnderrunError(
-                'No EOO seen before substrate ends'
-            )
 
         if substrateFun:
             return header  # TODO: Weird
