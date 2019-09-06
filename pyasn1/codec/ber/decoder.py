@@ -43,10 +43,11 @@ def asSeekableStream(substrate):
         return BytesIO(substrate)
     elif isinstance(substrate, univ.OctetString):
         return BytesIO(substrate.asOctets())
+    elif _PY2 and isinstance(substrate, file):
+        return substrate
     try:
-        if _PY2 and isinstance(substrate, file):
-            return BytesIO(substrate.read())  # Not optimal for really large files
-        elif not substrate.seekable():
+          # Not optimal for really large files
+        if not substrate.seekable():
             return BufferedReader(substrate, _BUFFER_SIZE)
         else:
             return substrate
@@ -1123,7 +1124,7 @@ class AnyDecoder(AbstractSimpleDecoder):
     def valueDecoder(self, substrate, asn1Spec,
                      tagSet=None, length=None, state=None,
                      decodeFun=None, substrateFun=None,
-                     **options):
+                     fullPosition=None, **options):
         if asn1Spec is None:
             isUntagged = True
 
@@ -1134,7 +1135,6 @@ class AnyDecoder(AbstractSimpleDecoder):
             isUntagged = tagSet != asn1Spec.tagSet
 
         if isUntagged:
-            fullPosition = substrate._marked_position
             currentPosition = substrate.tell()
 
             substrate.seek(fullPosition, os.SEEK_SET)
@@ -1154,7 +1154,7 @@ class AnyDecoder(AbstractSimpleDecoder):
     def indefLenValueDecoder(self, substrate, asn1Spec,
                              tagSet=None, length=None, state=None,
                              decodeFun=None, substrateFun=None,
-                             **options):
+                             fullPosition=None, **options):
         if asn1Spec is None:
             isTagged = False
 
@@ -1173,7 +1173,6 @@ class AnyDecoder(AbstractSimpleDecoder):
 
         else:
             # TODO: Seems not to be tested
-            fullPosition = substrate._marked_position
             currentPosition = substrate.tell()
 
             substrate.seek(fullPosition, os.SEEK_SET)
@@ -1375,7 +1374,7 @@ class Decoder(object):
         tagCache = self.__tagCache
         tagSetCache = self.__tagSetCache
 
-        substrate._marked_position = substrate.tell()
+        options["fullPosition"] = substrate.tell()
 
         while state is not stStop:
 
